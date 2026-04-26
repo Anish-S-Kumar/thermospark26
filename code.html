@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>THERMOSPARK | Battery Thermal Runaway Identifier — IGNOVATORS</title>
+<meta name="description" content="Real-time Battery Thermal Runaway Identifier dashboard by IGNOVATORS for ThermoSpark Hackathon 2026. Powered by Arduino UNO with WebSerial API."/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary-fixed-variant": "#004c69",
+                      "error": "#ffb4ab",
+                      "tertiary": "#ffc094",
+                      "surface-tint": "#7bd0ff",
+                      "on-primary-container": "#004965",
+                      "on-tertiary": "#4f2500",
+                      "outline-variant": "#3e484f",
+                      "on-secondary": "#003919",
+                      "surface-variant": "#2d3449",
+                      "primary-fixed-dim": "#7bd0ff",
+                      "on-tertiary-fixed": "#301400",
+                      "surface-container-low": "#131b2e",
+                      "surface-container-high": "#222a3d",
+                      "on-error": "#690005",
+                      "background": "#0b1326",
+                      "on-secondary-fixed-variant": "#005227",
+                      "inverse-on-surface": "#283044",
+                      "surface-bright": "#31394d",
+                      "tertiary-fixed": "#ffdcc5",
+                      "secondary-fixed-dim": "#4de082",
+                      "primary-fixed": "#c4e7ff",
+                      "primary-container": "#38bdf8",
+                      "on-tertiary-container": "#6d3500",
+                      "on-surface": "#dae2fd",
+                      "primary": "#8ed5ff",
+                      "tertiary-fixed-dim": "#ffb783",
+                      "tertiary-container": "#ff9846",
+                      "secondary-fixed": "#6dfe9c",
+                      "on-error-container": "#ffdad6",
+                      "inverse-surface": "#dae2fd",
+                      "on-primary": "#00354a",
+                      "surface-container-lowest": "#060e20",
+                      "surface": "#0b1326",
+                      "secondary": "#4de082",
+                      "on-secondary-fixed": "#00210c",
+                      "error-container": "#93000a",
+                      "outline": "#87929a",
+                      "surface-container-highest": "#2d3449",
+                      "on-background": "#dae2fd",
+                      "inverse-primary": "#00668a",
+                      "on-surface-variant": "#bdc8d1",
+                      "on-primary-fixed": "#001e2c",
+                      "surface-dim": "#0b1326",
+                      "secondary-container": "#00b55d",
+                      "on-secondary-container": "#003e1c",
+                      "surface-container": "#171f33",
+                      "on-tertiary-fixed-variant": "#713700"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "fontFamily": {
+                      "headline": ["Space Grotesk"],
+                      "body": ["Inter"],
+                      "label": ["Inter"]
+              }
+            },
+          }
+        }
+      </script>
+<style>
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .glass-panel { backdrop-filter: blur(20px); background: rgba(45, 52, 73, 0.4); }
+        .glow-primary { box-shadow: 0 0 20px rgba(56, 189, 248, 0.2); }
+        .glow-secondary { box-shadow: 0 0 20px rgba(77, 224, 130, 0.2); }
+
+        /* Kill Switch Indicator */
+        .kill-switch-safe {
+          box-shadow: 0 0 40px rgba(77,224,130,0.6), 0 0 80px rgba(77,224,130,0.3);
+          background: radial-gradient(circle at 35% 35%, #a8ffcc, #4de082);
+        }
+        .kill-switch-danger {
+          box-shadow: 0 0 40px rgba(255,80,80,0.8), 0 0 100px rgba(255,80,80,0.4);
+          background: radial-gradient(circle at 35% 35%, #ffaaaa, #ff3333);
+          animation: danger-pulse 0.6s ease-in-out infinite alternate;
+        }
+        @keyframes danger-pulse {
+          from { box-shadow: 0 0 40px rgba(255,80,80,0.8), 0 0 100px rgba(255,80,80,0.4); }
+          to   { box-shadow: 0 0 60px rgba(255,80,80,1),   0 0 140px rgba(255,80,80,0.7); }
+        }
+
+        /* Battery SVG pulse */
+        .battery-glow-safe  { filter: drop-shadow(0 0 8px #4de082); }
+        .battery-glow-danger { filter: drop-shadow(0 0 16px #ff3333) drop-shadow(0 0 32px #ff3333); animation: bat-blink 0.4s linear infinite alternate; }
+        @keyframes bat-blink { from { opacity:1; } to { opacity:0.6; } }
+
+        /* Terminal */
+        #terminal-log { font-family: 'Courier New', monospace; }
+        #terminal-log .log-line { opacity: 0; animation: line-in 0.3s forwards; }
+        @keyframes line-in { to { opacity:1; } }
+
+        /* Gauge arc */
+        .gauge-track { stroke: rgba(45,52,73,0.8); }
+        .gauge-fill-temp { stroke: url(#tempGrad); stroke-linecap: round; transition: stroke-dashoffset 0.5s ease; }
+        .gauge-fill-gas  { transition: width 0.5s ease; }
+
+        /* Amber warning bar */
+        .warn-amber { color: #f59e0b; }
+        .glow-amber { box-shadow: 0 0 20px rgba(245,158,11,0.4); }
+
+        /* Section divider */
+        .section-divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(142,213,255,0.2), transparent); }
+
+        /* Neon badge */
+        .neon-badge-green { background: rgba(77,224,130,0.1); border: 1px solid rgba(77,224,130,0.3); color: #4de082; }
+        .neon-badge-red   { background: rgba(255,51,51,0.1);  border: 1px solid rgba(255,51,51,0.4);  color: #ff5555; }
+        .neon-badge-amber { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: #f59e0b; }
+
+        /* Connect button shimmer */
+        .connect-btn { background: linear-gradient(135deg, #38bdf8 0%, #4de082 100%); position: relative; overflow: hidden; }
+        .connect-btn::after { content:''; position:absolute; inset:0; background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.25) 50%, transparent 70%); transform: translateX(-100%); transition: transform 0.6s; }
+        .connect-btn:hover::after { transform: translateX(100%); }
+
+        /* About section slide-in animation */
+        .about-section {
+          overflow: hidden;
+          animation: none;
+        }
+        .about-section.about-open {
+          display: block !important;
+          animation: slideDown 0.45s cubic-bezier(0.16,1,0.3,1) both;
+        }
+        .about-section.about-closing {
+          animation: slideUp 0.35s cubic-bezier(0.7,0,0.84,0) both;
+        }
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-24px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideUp {
+          from { opacity: 1; transform: translateY(0); }
+          to   { opacity: 0; transform: translateY(-24px); }
+        }
+        /* Tab Styling */
+        .nav-link-active {
+          color: #8ed5ff !important;
+          border-bottom: 2px solid #8ed5ff;
+          padding-bottom: 4px;
+        }
+        .nav-link-inactive {
+          color: #94a3b8 !important;
+        }
+        /* Hide sections initially for landing state */
+        #live-readings-section, #project, footer { display: none; }
+
+        /* ── Connect Modal ── */
+        #connect-modal-overlay {
+          position: fixed; inset: 0; z-index: 200;
+          background: rgba(6, 14, 32, 0.75);
+          backdrop-filter: blur(8px);
+          display: flex; align-items: center; justify-content: center;
+          opacity: 0; visibility: hidden;
+          transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        #connect-modal-overlay.modal-open {
+          opacity: 1; visibility: visible;
+        }
+        #connect-modal {
+          background: linear-gradient(145deg, #131b2e, #0f1929);
+          border: 1px solid rgba(142, 213, 255, 0.12);
+          border-radius: 2rem;
+          padding: 2.5rem;
+          width: 100%; max-width: 480px;
+          box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(142,213,255,0.06), inset 0 1px 0 rgba(255,255,255,0.04);
+          transform: translateY(24px) scale(0.97);
+          transition: transform 0.35s cubic-bezier(0.16,1,0.3,1);
+        }
+        #connect-modal-overlay.modal-open #connect-modal {
+          transform: translateY(0) scale(1);
+        }
+        .modal-option-btn {
+          width: 100%; padding: 1rem 1.25rem;
+          border-radius: 1rem; border: 1px solid rgba(142,213,255,0.12);
+          background: rgba(45,52,73,0.3);
+          display: flex; align-items: center; gap: 1rem;
+          cursor: pointer; transition: all 0.25s ease;
+          text-align: left; color: white;
+        }
+        .modal-option-btn:hover {
+          background: rgba(142,213,255,0.07);
+          border-color: rgba(142,213,255,0.3);
+          transform: translateY(-2px);
+          box-shadow: 0 8px 32px rgba(56,189,248,0.1);
+        }
+        .modal-option-btn.primary-option {
+          background: linear-gradient(135deg, rgba(56,189,248,0.15), rgba(77,224,130,0.1));
+          border-color: rgba(56,189,248,0.25);
+        }
+        .modal-option-btn.primary-option:hover {
+          background: linear-gradient(135deg, rgba(56,189,248,0.25), rgba(77,224,130,0.18));
+          border-color: rgba(56,189,248,0.45);
+          box-shadow: 0 8px 32px rgba(56,189,248,0.2);
+        }
+        .modal-icon-wrap {
+          width: 2.75rem; height: 2.75rem; border-radius: 0.75rem;
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        .modal-close-btn {
+          width: 2rem; height: 2rem; border-radius: 50%;
+          background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: all 0.2s; color: #94a3b8;
+        }
+        .modal-close-btn:hover { background: rgba(255,255,255,0.1); color: white; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fab-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(56,189,248,0.4); } 50% { box-shadow: 0 0 0 10px rgba(56,189,248,0); } }
+      </style>
+</head>
+<body class="bg-background text-on-background font-body selection:bg-primary/30">
+
+<!-- ===== TOP NAV ===== -->
+<nav class="fixed top-0 w-full z-50 bg-[#0b1326]/80 backdrop-blur-md shadow-[0_24px_48px_rgba(6,14,32,0.4)]">
+  <div class="flex justify-between items-center px-8 py-4 max-w-[1440px] mx-auto">
+    <!-- Logo Area -->
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
+        <span class="material-symbols-outlined text-[#0b1326] text-xl" data-icon="bolt">bolt</span>
+      </div>
+      <div>
+        <div class="text-xl font-black text-white tracking-widest font-headline leading-tight">IGN<span class="text-primary">OVATORS</span></div>
+        <div class="text-[9px] font-bold uppercase tracking-[0.25em] text-slate-500">ThermoSpark Hackathon 2026</div>
+      </div>
+    </div>
+
+    <div class="hidden md:flex gap-8 items-center">
+      <a id="nav-dashboard" onclick="switchTab('dashboard', event)" class="font-['Space_Grotesk'] tracking-tight text-sm uppercase cursor-pointer select-none nav-link-active" href="#">Dashboard</a>
+      <a id="nav-about" onclick="switchTab('about', event)" class="font-['Space_Grotesk'] tracking-tight text-sm uppercase cursor-pointer select-none nav-link-inactive hover:text-white transition-colors" href="#">About</a>
+    </div>
+
+    <div class="flex items-center gap-6">
+      <!-- Kill Switch Status Badge -->
+      <div id="nav-status-badge" class="hidden md:flex items-center gap-2 px-4 py-2 rounded-full neon-badge-green text-xs font-black uppercase tracking-widest">
+        <span class="w-2 h-2 rounded-full bg-secondary animate-pulse inline-block"></span>
+        <span id="nav-status-text">Kill Switch Status</span>
+      </div>
+      <div class="flex gap-4">
+        <span class="material-symbols-outlined text-slate-400 hover:text-white cursor-pointer transition-colors" data-icon="notifications">notifications</span>
+        <span class="material-symbols-outlined text-slate-400 hover:text-white cursor-pointer transition-colors" data-icon="settings">settings</span>
+      </div>
+      <!-- Connect Button -->
+      <button id="connect-btn" onclick="openConnectModal()" class="connect-btn text-[#0b1326] px-6 py-2.5 rounded-xl font-headline font-bold text-sm tracking-wide scale-95 active:scale-90 transition-transform">
+        Connect Hardware
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- ===== CONNECT MODAL ===== -->
+<div id="connect-modal-overlay" onclick="handleModalOverlayClick(event)">
+  <div id="connect-modal">
+    <!-- Header -->
+    <div class="flex justify-between items-start mb-6">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <div class="w-6 h-6 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
+            <span class="material-symbols-outlined text-[#0b1326]" style="font-size:14px">bolt</span>
+          </div>
+          <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">ThermoSpark 2026</span>
+        </div>
+        <h3 class="font-headline text-xl font-bold text-white">Launch Dashboard</h3>
+        <p class="text-xs text-slate-500 mt-1">Choose how you'd like to proceed</p>
+      </div>
+      <button class="modal-close-btn" onclick="closeConnectModal()">
+        <span class="material-symbols-outlined" style="font-size:16px">close</span>
+      </button>
+    </div>
+
+    <!-- Divider -->
+    <div class="h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent mb-5"></div>
+
+    <!-- Options -->
+    <div class="flex flex-col gap-3">
+      <!-- Option 1: Connect Hardware -->
+      <button class="modal-option-btn primary-option" onclick="modalConnectHardware()">
+        <div class="modal-icon-wrap bg-gradient-to-br from-primary/20 to-secondary/10">
+          <span class="material-symbols-outlined text-primary" style="font-size:22px">cable</span>
+        </div>
+        <div>
+          <div class="font-headline font-bold text-sm text-white mb-0.5">Connect to Hardware</div>
+          <div class="text-[11px] text-slate-400 leading-snug">Link to Arduino UNO via WebSerial API at 9600 baud for live sensor data</div>
+        </div>
+        <span class="material-symbols-outlined text-slate-600 ml-auto" style="font-size:18px">arrow_forward</span>
+      </button>
+
+
+    </div>
+
+    <!-- Footer note -->
+    <p class="text-center text-[10px] text-slate-600 mt-5 uppercase tracking-widest">Requires Chrome or Edge for WebSerial support</p>
+  </div>
+</div>
+
+<!-- ===== FLOATING LIVE DASHBOARD FAB ===== -->
+<div id="live-fab" style="
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 300;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(12px) scale(0.95);
+  transition: opacity 0.35s cubic-bezier(0.16,1,0.3,1), transform 0.35s cubic-bezier(0.16,1,0.3,1), visibility 0.35s;
+">
+  <button onclick="modalGoLive()" style="
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.85rem 1.4rem;
+    background: linear-gradient(135deg, #131b2e 0%, #0f1929 100%);
+    border: 1px solid rgba(142,213,255,0.2);
+    border-radius: 999px;
+    cursor: pointer;
+    color: white;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(142,213,255,0.06), inset 0 1px 0 rgba(255,255,255,0.04);
+    transition: all 0.25s ease;
+    backdrop-filter: blur(16px);
+    white-space: nowrap;
+  "
+  onmouseover="this.style.borderColor='rgba(142,213,255,0.45)'; this.style.boxShadow='0 12px 48px rgba(56,189,248,0.2), 0 0 0 1px rgba(142,213,255,0.12)'; this.style.transform='translateY(-2px)';"
+  onmouseout="this.style.borderColor='rgba(142,213,255,0.2)'; this.style.boxShadow='0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(142,213,255,0.06), inset 0 1px 0 rgba(255,255,255,0.04)'; this.style.transform='translateY(0)';">
+    <div style="
+      width: 2rem; height: 2rem; border-radius: 0.5rem;
+      background: linear-gradient(135deg, rgba(56,189,248,0.2), rgba(77,224,130,0.12));
+      display: flex; align-items: center; justify-content: center;
+      border: 1px solid rgba(56,189,248,0.2);
+    ">
+      <span class="material-symbols-outlined text-primary" style="font-size:17px">dashboard</span>
+    </div>
+    <div style="text-align:left;">
+      <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:0.8rem; color:white; line-height:1.2;">Live Dashboard</div>
+      <div style="font-size:0.6rem; color:#64748b; text-transform:uppercase; letter-spacing:0.08em;">No hardware needed</div>
+    </div>
+    <span class="material-symbols-outlined" style="font-size:15px; color:#4de082; margin-left:0.25rem;">arrow_forward</span>
+  </button>
+</div>
+
+<!-- ===== NOT CONNECTED SCREEN ===== -->
+<div id="error-screen" style="position:fixed;inset:0;z-index:500;background:transparent;display:none;align-items:flex-start;justify-content:flex-start;padding:120px 40px;pointer-events:none;">
+  <div style="background:radial-gradient(ellipse at 50% 20%,rgba(220,38,38,0.25) 0%,rgba(11,19,38,1) 85%);border:1px solid rgba(255,80,80,0.3);border-radius:2rem;padding:2.5rem 2rem;width:100%;max-width:380px;box-shadow:0 12px 60px rgba(0,0,0,0.8),0 0 40px rgba(220,38,38,0.15);text-align:center;pointer-events:auto;">
+    <!-- Icon -->
+    <div style="width:5rem;height:5rem;border-radius:50%;background:radial-gradient(circle,rgba(255,80,80,0.18),rgba(180,30,30,0.06));border:1px solid rgba(255,80,80,0.28);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;box-shadow:0 0 50px rgba(255,80,80,0.14);">
+      <span class="material-symbols-outlined" style="font-size:2.4rem;color:#ff5555;">link_off</span>
+    </div>
+    <!-- Badge -->
+    <div style="display:inline-block;padding:0.2rem 0.8rem;margin-bottom:0.9rem;border-radius:999px;background:rgba(255,80,80,0.09);border:1px solid rgba(255,80,80,0.28);color:#ff6b6b;font-size:0.6rem;font-weight:800;text-transform:uppercase;letter-spacing:0.2em;">Serial Port</div>
+    <!-- Heading -->
+    <h3 style="font-family:'Space Grotesk',sans-serif;font-size:1.8rem;font-weight:800;color:#ff6b6b;margin-bottom:0.45rem;text-shadow:0 0 40px rgba(255,80,80,0.35);">NOT CONNECTED</h3>
+    <p style="color:#4e5b72;font-size:0.82rem;line-height:1.65;margin-bottom:2rem;">No compatible Arduino device was detected on the selected serial port. Ensure the USB cable is plugged in and drivers are installed.</p>
+    <!-- Divider -->
+    <div style="height:1px;background:linear-gradient(90deg,transparent,rgba(255,80,80,0.18),transparent);margin-bottom:1.5rem;"></div>
+    <!-- Buttons -->
+    <div style="display:flex;gap:0.75rem;justify-content:center;">
+      <button id="error-back-btn" onclick="goBackFromError()" style="padding:0.72rem 1.6rem;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09);border-radius:0.85rem;color:#64748b;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:0.85rem;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:0.4rem;"
+        onmouseover="this.style.background='rgba(255,255,255,0.08)';this.style.color='white';this.style.borderColor='rgba(255,255,255,0.18)';"
+        onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.color='#64748b';this.style.borderColor='rgba(255,255,255,0.09)';">
+        <span class="material-symbols-outlined" style="font-size:16px;">arrow_back</span> Back
+      </button>
+      <button onclick="retryConnection()" style="padding:0.72rem 1.6rem;background:linear-gradient(135deg,rgba(200,30,30,0.18),rgba(255,80,80,0.1));border:1px solid rgba(255,80,80,0.32);border-radius:0.85rem;color:#ff8080;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.85rem;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:0.4rem;"
+        onmouseover="this.style.background='linear-gradient(135deg,rgba(220,38,38,0.3),rgba(255,80,80,0.18))';this.style.borderColor='rgba(255,80,80,0.55)';this.style.color='#ffaaaa';"
+        onmouseout="this.style.background='linear-gradient(135deg,rgba(200,30,30,0.18),rgba(255,80,80,0.1))';this.style.borderColor='rgba(255,80,80,0.32)';this.style.color='#ff8080';">
+        <span class="material-symbols-outlined" style="font-size:16px;">refresh</span> Retry
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ANALYSING / CONNECTING SCREEN ===== -->
+<div id="connecting-screen" style="position:fixed;inset:0;z-index:500;background:rgba(6,14,32,0.92);backdrop-filter:blur(14px);display:none;align-items:center;justify-content:center;">
+  <div style="text-align:center;">
+    <div style="width:5.5rem;height:5.5rem;border-radius:50%;border:3px solid rgba(56,189,248,0.12);border-top-color:#38bdf8;animation:spin 0.9s linear infinite;margin:0 auto 1.75rem;box-shadow:0 0 50px rgba(56,189,248,0.18);"></div>
+    <h3 style="font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:1.3rem;color:white;margin-bottom:0.5rem;letter-spacing:0.02em;">Analysing</h3>
+    <p style="color:#3d5068;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.18em;">Establishing serial connection&hellip;</p>
+  </div>
+</div>
+
+<!-- ===== CONNECTED SUCCESS SCREEN ===== -->
+<div id="connected-screen" style="position:fixed;inset:0;z-index:500;background:rgba(6,14,32,0.88);backdrop-filter:blur(14px);display:none;align-items:center;justify-content:center;">
+  <div style="background:radial-gradient(ellipse at 50% 20%,rgba(77,224,130,0.18) 0%,rgba(11,19,38,0.98) 65%);border:1px solid rgba(77,224,130,0.22);border-radius:2rem;padding:3rem 2.5rem;width:100%;max-width:420px;box-shadow:0 0 100px rgba(77,224,130,0.12),0 32px 80px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.03);text-align:center;">
+    <div style="width:5rem;height:5rem;border-radius:50%;background:radial-gradient(circle,rgba(77,224,130,0.2),rgba(0,180,80,0.05));border:1px solid rgba(77,224,130,0.35);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;box-shadow:0 0 50px rgba(77,224,130,0.18);">
+      <span class="material-symbols-outlined" style="font-size:2.4rem;color:#4de082;">check_circle</span>
+    </div>
+    <div style="display:inline-block;padding:0.2rem 0.8rem;margin-bottom:0.9rem;border-radius:999px;background:rgba(77,224,130,0.09);border:1px solid rgba(77,224,130,0.28);color:#4de082;font-size:0.6rem;font-weight:800;text-transform:uppercase;letter-spacing:0.2em;">Arduino UNO · 9600 Baud</div>
+    <h3 style="font-family:'Space Grotesk',sans-serif;font-size:1.8rem;font-weight:800;color:#4de082;margin-bottom:0.45rem;text-shadow:0 0 40px rgba(77,224,130,0.35);">CONNECTED</h3>
+    <p style="color:#4e5b72;font-size:0.82rem;margin-bottom:1.5rem;">Device handshake successful. Loading live telemetry pipeline&hellip;</p>
+    <div style="display:inline-flex;align-items:center;gap:0.5rem;padding:0.35rem 1rem;background:rgba(77,224,130,0.08);border:1px solid rgba(77,224,130,0.22);border-radius:999px;color:#4de082;font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.15em;">
+      <span style="width:6px;height:6px;border-radius:50%;background:#4de082;display:inline-block;animation:pulse 1s ease-in-out infinite;"></span>
+      Live Signal Active
+    </div>
+  </div>
+</div>
+
+<main class="pt-24">
+
+<!-- ===== HERO SECTION ===== -->
+<section id="hero-section" class="relative min-h-screen flex items-center px-8 overflow-hidden">
+  <div class="absolute inset-0 z-0 bg-[#050a18]">
+    <canvas id="bg-animation-canvas" class="absolute inset-0 w-full h-full"></canvas>
+    <div class="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent"></div>
+  </div>
+  <div class="relative z-10 max-w-[1440px] mx-auto w-full flex flex-col items-center text-center">
+    <div class="max-w-3xl">
+      <span class="inline-block py-1 px-3 mb-6 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold tracking-[0.2em] uppercase">
+        IGNOVATORS · Industrial IoT
+      </span>
+      <h1 class="font-headline text-6xl md:text-7xl font-bold leading-[0.9] tracking-tighter mb-8 bg-clip-text text-transparent bg-gradient-to-b from-white to-slate-500">
+        Battery Thermal<br/><span class="text-primary-container">Runaway Identifier</span>
+      </h1>
+      <p class="text-on-surface-variant text-lg md:text-xl max-w-xl mb-10 leading-relaxed mx-auto">
+        Real-time thermal runaway detection and automated kill-switch isolation using MQ-2 vapor sensors and IRLZ44N MOSFET logic — powered by Arduino UNO.
+      </p>
+      <div class="flex flex-wrap gap-4 justify-center">
+        <button onclick="openConnectModal()" class="connect-btn px-8 py-4 text-[#0b1326] rounded-xl font-headline font-bold text-lg hover:shadow-[0_0_30px_rgba(56,189,248,0.5)] transition-all">
+          Connect to ScamShield Hardware
+        </button>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== LIVE READINGS SECTION ===== -->
+<section id="live-readings-section" class="py-24 px-8 max-w-[1440px] mx-auto">
+  <div class="mb-16 flex flex-col md:flex-row items-start md:items-end justify-between gap-6">
+    <div>
+      <h2 class="font-headline text-4xl font-bold mb-4 tracking-tight">Real-time Telemetry</h2>
+      <p class="text-on-surface-variant max-w-2xl">Live sensor data from the Arduino UNO — temperature and electrolyte vapor readings updated every 500ms. Connect hardware to activate.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="conn-status-dot" class="w-3 h-3 rounded-full bg-slate-600"></span>
+      <span id="conn-status-text" class="text-xs uppercase tracking-widest text-slate-500 font-bold">Disconnected</span>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-6">
+
+    <!-- KILL SWITCH — large span -->
+    <div id="kill-switch-panel" class="md:col-span-4 lg:col-span-2 bg-surface-container-low p-8 rounded-3xl flex flex-col justify-between min-h-[320px] border border-outline-variant/10 transition-all duration-500">
+      <div>
+        <h4 id="kill-status-label" class="text-3xl font-headline font-bold text-secondary">KILL SWITCH STATUS</h4>
+      </div>
+      <div class="flex flex-col items-center justify-center gap-6 flex-1 py-4">
+        <!-- Big indicator light -->
+        <div id="kill-indicator" class="w-28 h-28 rounded-full kill-switch-safe transition-all duration-500"></div>
+
+        <!-- Battery SVG -->
+        <svg id="battery-svg" viewBox="0 0 120 60" class="w-40 battery-glow-safe transition-all duration-500" xmlns="http://www.w3.org/2000/svg">
+          <rect x="4" y="8" width="100" height="44" rx="8" ry="8" fill="none" stroke="#4de082" stroke-width="3" id="bat-border"/>
+          <rect x="104" y="20" width="12" height="20" rx="4" ry="4" fill="#4de082" id="bat-cap"/>
+          <rect x="10" y="14" width="30" height="32" rx="4" ry="4" fill="#4de082" opacity="0.9" id="bat-cell1"/>
+          <rect x="46" y="14" width="30" height="32" rx="4" ry="4" fill="#4de082" opacity="0.7" id="bat-cell2"/>
+          <rect x="82" y="14" width="14" height="32" rx="4" ry="4" fill="#4de082" opacity="0.4" id="bat-cell3"/>
+          <!-- Lightning bolt for kill -->
+          <text id="bat-icon" x="36" y="36" text-anchor="middle" font-size="20" fill="white" font-weight="bold" style="display:none">⚡</text>
+        </svg>
+      </div>
+      <p id="kill-sub-text" class="text-sm text-slate-400 font-medium text-center">IRLZ44N MOSFET: <span class="text-secondary font-bold">CONDUCTING</span></p>
+    </div>
+
+    <!-- TEMPERATURE GAUGE -->
+    <div class="md:col-span-2 lg:col-span-2 glass-panel p-8 rounded-3xl overflow-hidden relative border border-outline-variant/10 flex flex-col items-center justify-between min-h-[320px]">
+      <div class="w-full flex justify-between items-center">
+        <div>
+          <p class="font-label text-xs uppercase tracking-[0.2em] text-slate-500 mb-1">Battery Temperature</p>
+          <h4 class="text-2xl font-headline font-bold">Thermal Monitor</h4>
+        </div>
+        <span id="temp-badge" class="text-[10px] px-2 py-1 neon-badge-green rounded font-black tracking-widest">STABLE</span>
+      </div>
+
+      <!-- Semi-circular gauge -->
+      <div class="relative my-4">
+        <svg viewBox="0 0 200 110" class="w-48 overflow-visible">
+          <defs>
+            <linearGradient id="tempGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#4de082"/>
+              <stop offset="60%" stop-color="#f59e0b"/>
+              <stop offset="100%" stop-color="#ff3333"/>
+            </linearGradient>
+          </defs>
+          <!-- Track (semi-circle) -->
+          <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="rgba(45,52,73,0.8)" stroke-width="16" stroke-linecap="round"/>
+          <!-- Fill arc -->
+          <path id="temp-arc" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#tempGrad)" stroke-width="16" stroke-linecap="round" stroke-dasharray="251.3" stroke-dashoffset="251.3" style="transition: stroke-dashoffset 0.5s ease;"/>
+          <!-- Ticks -->
+          <text x="14" y="115" fill="#64748b" font-size="10" text-anchor="middle">0</text>
+          <text x="100" y="22" fill="#64748b" font-size="10" text-anchor="middle">50</text>
+          <text x="186" y="115" fill="#64748b" font-size="10" text-anchor="middle">100</text>
+        </svg>
+        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 text-center">
+          <p class="font-headline text-4xl font-bold" id="temp-display">--</p>
+          <p class="text-slate-500 font-label text-xs mt-1 uppercase tracking-widest">°C</p>
+        </div>
+      </div>
+
+      <div class="w-full">
+        <div class="flex justify-between text-xs text-slate-500 mb-1">
+          <span>Safe &lt;45°C</span><span>Warning &lt;65°C</span><span>Critical 65°C+</span>
+        </div>
+        <div class="w-full h-1.5 bg-surface-variant rounded-full overflow-hidden">
+          <div id="temp-bar" class="h-full bg-secondary rounded-full transition-all duration-500" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GAS SENSOR GAUGE -->
+    <div class="md:col-span-2 lg:col-span-2 bg-surface-container-high p-8 rounded-3xl min-h-[320px] flex flex-col justify-between">
+      <div class="flex justify-between items-center">
+        <div>
+          <p class="font-label text-xs uppercase tracking-[0.2em] text-slate-500 mb-1">Electrolyte Vapor</p>
+          <h4 class="text-2xl font-headline font-bold">MQ-2 Sensor</h4>
+        </div>
+        <span id="gas-badge" class="text-[10px] px-2 py-1 neon-badge-green rounded font-black tracking-widest">CLEAR</span>
+      </div>
+
+      <div class="flex-1 flex flex-col justify-center gap-3 my-4">
+        <p class="font-headline text-5xl font-bold text-center" id="gas-display">--<span class="text-2xl font-normal ml-1 text-slate-400">ppm</span></p>
+        <!-- Vertical bar gauge -->
+        <div class="flex items-end gap-1 h-24 px-4">
+          <div class="flex-1 flex flex-col-reverse">
+            <div id="gas-bar-fill" class="w-full rounded-t-lg bg-secondary transition-all duration-500" style="height:0%"></div>
+            <div class="flex-1 bg-surface-variant rounded-t-lg"></div>
+          </div>
+          <div class="text-xs text-slate-500 flex flex-col justify-between h-full pb-1">
+            <span>1023</span>
+            <span>512</span>
+            <span>0</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="flex justify-between text-xs text-slate-500 mb-1">
+          <span>Safe &lt;400</span><span>Warn &lt;600</span><span>Danger 600+</span>
+        </div>
+        <div class="w-full h-1.5 bg-surface-variant rounded-full overflow-hidden">
+          <div id="gas-bar" class="h-full bg-primary rounded-full transition-all duration-500" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SYSTEM LOGS / ALERTS -->
+    <div class="md:col-span-2 lg:col-span-3 bg-error-container/20 p-8 rounded-3xl min-h-[260px] flex flex-col border border-error/10">
+      <div class="flex items-center gap-3 mb-6">
+        <span class="material-symbols-outlined text-error" data-icon="warning">warning</span>
+        <h4 class="font-headline font-bold text-xl text-error">System Logs</h4>
+      </div>
+      <div class="space-y-4" id="system-log-panel">
+        <div class="flex justify-between items-center bg-surface-container-low p-3 rounded-xl">
+          <span class="text-xs text-on-surface">Waiting for hardware connection…</span>
+          <span id="log-time-1" class="text-[10px] text-slate-500">--:--:--</span>
+        </div>
+        <div class="flex justify-between items-center bg-surface-container-low p-3 rounded-xl border-l-2 border-secondary">
+          <span class="text-xs text-on-surface">WebSerial API ready</span>
+          <span class="text-[10px] text-slate-500">INIT</span>
+        </div>
+        <div class="flex justify-between items-center bg-surface-container-low p-3 rounded-xl">
+          <span class="text-xs text-on-surface">IGNOVATORS — ThermoSpark 2026</span>
+          <span class="text-[10px] text-slate-500">INFO</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- LIVE TERMINAL -->
+    <div class="md:col-span-2 lg:col-span-3 bg-[#060e20] p-6 rounded-3xl border border-outline-variant/20 min-h-[260px] flex flex-col">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="flex gap-1.5">
+          <div class="w-3 h-3 rounded-full bg-red-500"></div>
+          <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+          <div class="w-3 h-3 rounded-full bg-green-500"></div>
+        </div>
+        <span class="text-xs text-slate-500 uppercase tracking-widest font-bold ml-2">Raw Data Console</span>
+        <span class="ml-auto text-[9px] text-slate-600 uppercase tracking-widest">9600 BAUD</span>
+      </div>
+      <div id="terminal-log" class="flex-1 overflow-y-auto text-xs text-green-400 space-y-1 pr-1 max-h-40">
+        <div class="text-slate-600">$ Waiting for Arduino data stream…</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+
+<!-- ===== PROJECT BRIEF SECTION ===== -->
+<section id="project" class="py-32 px-8 max-w-[1440px] mx-auto about-section" style="display:none;">
+  <div class="flex flex-col md:flex-row gap-16 items-center">
+    <div class="w-full md:w-1/2">
+      <span class="inline-block py-1 px-3 mb-6 rounded-full neon-badge-green text-xs font-bold tracking-[0.2em] uppercase">Project Brief</span>
+      <h2 class="font-headline text-5xl font-bold mb-8">The ThermoSpark Protocol</h2>
+      <div class="space-y-10">
+        <div class="flex gap-6">
+          <div class="flex-shrink-0 w-12 h-12 rounded-full border border-primary flex items-center justify-center text-primary font-headline font-bold">01</div>
+          <div>
+            <h4 class="font-headline text-xl font-bold mb-2">Vapor Detection</h4>
+            <p class="text-slate-500">MQ-2 sensor continuously samples the air every 10ms for electrolyte venting — the earliest chemical signature of thermal runaway.</p>
+          </div>
+        </div>
+        <div class="flex gap-6">
+          <div class="flex-shrink-0 w-12 h-12 rounded-full border border-primary flex items-center justify-center text-primary font-headline font-bold">02</div>
+          <div>
+            <h4 class="font-headline text-xl font-bold mb-2">Thermal Analysis</h4>
+            <p class="text-slate-500">NTC thermistor data is compared against danger thresholds. A rapid rise gradient (dT/dt) triggers the pre-warning state before hitting critical.</p>
+          </div>
+        </div>
+        <div class="flex gap-6">
+          <div class="flex-shrink-0 w-12 h-12 rounded-full border border-secondary flex items-center justify-center text-secondary font-headline font-bold">03</div>
+          <div>
+            <h4 class="font-headline text-xl font-bold mb-2">MOSFET Isolation</h4>
+            <p class="text-slate-500">The IRLZ44N MOSFET acts as a high-speed isolation switch. Digital pin goes LOW → gate closes → power supply to the load is severed in &lt;1ms.</p>
+          </div>
+        </div>
+        <div class="flex gap-6">
+          <div class="flex-shrink-0 w-12 h-12 rounded-full border border-error flex items-center justify-center text-error font-headline font-bold">04</div>
+          <div>
+            <h4 class="font-headline text-xl font-bold mb-2">Kill Switch Active</h4>
+            <p class="text-slate-500">Dashboard reflects POWER KILLED state with emergency red indicator. System remains isolated until manual reset — ensuring absolute safety redundancy.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hardware Schematic Panel -->
+    <div class="w-full md:w-1/2">
+      <div class="glass-panel rounded-[2.5rem] border border-outline-variant/20 relative overflow-hidden p-10">
+        <h3 class="font-headline text-lg font-bold text-slate-400 uppercase tracking-widest mb-6">Circuit Architecture</h3>
+        <!-- ASCII / SVG schematic style -->
+        <div class="bg-[#060e20] rounded-2xl p-6 font-mono text-xs text-green-400 leading-relaxed">
+          <div class="text-slate-500 mb-2">// IGNOVATORS — ThermoSpark 2026</div>
+          <div class="text-primary">Arduino UNO</div>
+          <div class="pl-4 text-green-400">├── A0 → MQ-2 Sensor (Gas ADC 0–1023)</div>
+          <div class="pl-4 text-green-400">├── A1 → NTC Thermistor (Temp ADC)</div>
+          <div class="pl-4 text-secondary">├── D7 → IRLZ44N Gate (Kill Switch)</div>
+          <div class="pl-4 text-slate-500">└── USB → Serial 9600 baud</div>
+          <br/>
+          <div class="text-slate-500">// Data stream format (CSV):</div>
+          <div class="text-yellow-400">Serial.print(gasValue);</div>
+          <div class="text-yellow-400">Serial.print(",");</div>
+          <div class="text-yellow-400">Serial.println(tempValue);</div>
+          <br/>
+          <div class="text-slate-500">// Thresholds</div>
+          <div class="text-green-400">#define GAS_WARN  400   // amber</div>
+          <div class="text-green-400">#define GAS_CRIT  700   // red</div>
+          <div class="text-green-400">#define TEMP_WARN  45   // amber</div>
+          <div class="text-green-400">#define TEMP_CRIT  65   // kill switch</div>
+        </div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-primary/5 blur-[80px] rounded-full pointer-events-none"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hardware Cards moved here -->
+  <div class="mt-20 pt-16 border-t border-outline-variant/20">
+    <h3 class="font-headline text-2xl font-bold mb-2 text-center">Precision Hardware Stack</h3>
+    <p class="text-on-surface-variant text-sm text-center mb-10">Engineered for extreme thermal environments. Our sensor fusion pipeline provides 500ms real-time response.</p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <!-- Feature 1 -->
+      <div class="group bg-surface-container p-10 rounded-[2.5rem] border border-outline-variant/10 hover:border-primary/40 transition-all duration-500">
+        <div class="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-8 group-hover:bg-primary/20 transition-all">
+          <span class="material-symbols-outlined text-primary text-3xl" data-icon="air">air</span>
+        </div>
+        <h3 class="font-headline text-2xl font-bold mb-4">MQ-2 Gas Sensor</h3>
+        <p class="text-slate-400 leading-relaxed">Early chemical venting detection for LPG, hydrogen, and electrolyte vapor. Tuned for battery off-gassing signatures at 9600 baud serial output.</p>
+      </div>
+      <!-- Feature 2 -->
+      <div class="group bg-surface-container p-10 rounded-[2.5rem] border border-outline-variant/10 hover:border-secondary/40 transition-all duration-500">
+        <div class="w-16 h-16 rounded-2xl bg-secondary/10 flex items-center justify-center mb-8 group-hover:bg-secondary/20 transition-all">
+          <span class="material-symbols-outlined text-secondary text-3xl" data-icon="device_thermostat">device_thermostat</span>
+        </div>
+        <h3 class="font-headline text-2xl font-bold mb-4">NTC Thermistor</h3>
+        <p class="text-slate-400 leading-relaxed">High-sensitivity thermal monitoring on the Arduino analog pin. Detects rapid thermal gradients — the first signature of battery runaway events.</p>
+      </div>
+      <!-- Feature 3 -->
+      <div class="group bg-surface-container p-10 rounded-[2.5rem] border border-outline-variant/10 hover:border-error/40 transition-all duration-500">
+        <div class="w-16 h-16 rounded-2xl bg-error/10 flex items-center justify-center mb-8 group-hover:bg-error/20 transition-all">
+          <span class="material-symbols-outlined text-error text-3xl" data-icon="power_off">power_off</span>
+        </div>
+        <h3 class="font-headline text-2xl font-bold mb-4">IRLZ44N Kill Switch</h3>
+        <p class="text-slate-400 leading-relaxed">High-speed MOSFET isolation logic. When thresholds breach, the gate signal cuts power supply in under 1ms — bypassing all software layers.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+
+
+
+</main>
+
+<!-- Footer -->
+<footer class="w-full py-12 px-8 border-t border-[#3e484f]/15 bg-[#0b1326]">
+  <div class="flex flex-col md:flex-row justify-between items-center gap-6 max-w-[1440px] mx-auto">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
+        <span class="material-symbols-outlined text-[#0b1326] text-base" data-icon="bolt">bolt</span>
+      </div>
+      <div class="text-white font-black font-headline text-xl tracking-widest">IGN<span class="text-primary">OVATORS</span></div>
+    </div>
+    <div class="text-center">
+      <div class="text-xs text-slate-500 uppercase tracking-widest font-bold">ThermoSpark Hackathon 2026</div>
+      <div class="text-[10px] text-slate-600 mt-1">Battery Thermal Runaway Identifier · WebSerial API · Arduino UNO</div>
+    </div>
+    <div class="font-['Inter'] text-[10px] tracking-widest uppercase text-slate-500">
+      © 2026 IGNOVATORS. CYBER SAFETY ASSURED.
+    </div>
+  </div>
+</footer>
+
+<!-- Alert UI (Centered) -->
+<div id="side-alert-container" class="fixed inset-0 z-[1000] flex items-center justify-center pointer-events-none hidden">
+  <div id="side-alert" class="glass-panel p-8 rounded-[2.5rem] border border-error/40 shadow-[0_0_100px_rgba(255,80,80,0.2)] pointer-events-auto transform transition-all max-w-sm w-full relative overflow-hidden">
+    <!-- Pulse Glow Background -->
+    <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-error to-transparent animate-pulse"></div>
+    
+    <div class="flex flex-col items-center text-center gap-6">
+      <div class="w-16 h-16 bg-error/10 rounded-2xl flex items-center justify-center text-error border border-error/20">
+        <span class="material-symbols-outlined style-filled" style="font-size:2.5rem" data-icon="warning">warning</span>
+      </div>
+      <div>
+        <h5 id="alert-title" class="font-headline text-2xl font-bold text-white mb-2 uppercase tracking-tight">Warning</h5>
+        <p id="alert-body" class="text-sm text-slate-400 leading-relaxed">Critical threshold exceeded. System isolation in progress.</p>
+      </div>
+      <div class="flex flex-col w-full gap-2">
+        <button onclick="hideAlert()" class="w-full py-3 bg-error text-[#0b1326] rounded-xl font-headline font-bold text-sm hover:bg-error-container transition-colors shadow-lg shadow-error/20">Acknowledge</button>
+        <button onclick="hideAlert()" class="w-full py-3 bg-surface-container-high text-slate-400 rounded-xl font-headline font-bold text-xs hover:text-white transition-colors">Dismiss</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================
+     WEBSERIAL + DASHBOARD LOGIC
+     ============================ -->
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let serialPort = null;
+  let reader = null;
+  let isConnected = false;
+  let killActive = false;
+  let lastAlertTime = 0;
+
+  // Thresholds
+  const TEMP_WARN = 45, TEMP_CRIT = 65;
+  const GAS_WARN  = 400, GAS_CRIT = 600;
+
+  // ── WebSerial Connect ───────────────────────────────────────────────────────
+
+
+  function showLiveFab() {
+    const fab = document.getElementById('live-fab');
+    fab.style.opacity = '1';
+    fab.style.visibility = 'visible';
+    fab.style.transform = 'translateY(0) scale(1)';
+  }
+
+  function hideLiveFab() {
+    const fab = document.getElementById('live-fab');
+    fab.style.opacity = '0';
+    fab.style.visibility = 'hidden';
+    fab.style.transform = 'translateY(12px) scale(0.95)';
+  }
+
+  async function disconnectSerial() {
+    isConnected = false;
+    if (reader) { try { await reader.cancel(); } catch(e){} reader = null; }
+    if (serialPort) { try { await serialPort.close(); } catch(e){} serialPort = null; }
+    setConnStatus(false);
+    addLog('🔌 Disconnected from hardware.', 'warn');
+  }
+
+  // ── Read Loop ───────────────────────────────────────────────────────────────
+  let isReading = false;
+  async function readLoop() {
+    if (isReading) return;
+    isReading = true;
+    
+    const textDecoder = new TextDecoderStream();
+    const pipe = serialPort.readable.pipeTo(textDecoder.writable);
+    reader = textDecoder.readable.getReader();
+    let buffer = '';
+
+    while (isConnected) {
+      try {
+        const { value, done } = await reader.read();
+        if (done) {
+          addLog('🔌 Serial stream ended.', 'warn');
+          break;
+        }
+        buffer += value;
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed) {
+            // Process in next tick to keep loop responsive
+            setTimeout(() => processData(trimmed), 0);
+          }
+        }
+      } catch (err) {
+        if (isConnected) {
+          addLog('⚠ Read error: ' + err.message + '. Retrying...', 'warn');
+          // Wait a bit before retry
+          await new Promise(r => setTimeout(r, 2000));
+        }
+        break;
+      }
+    }
+    
+    isReading = false;
+    // Auto-restart if we should still be connected
+    if (isConnected && serialPort && serialPort.readable) {
+      readLoop();
+    }
+  }
+
+  // ── Parse & Update UI ───────────────────────────────────────────────────────
+  function processData(raw) {
+    // Log raw line to console
+    terminalLog(raw);
+
+    const parts = raw.split(',');
+    if (parts.length < 2) return;
+
+    // Format: gasValue,tempValue
+    const gas  = parseInt(parts[0].trim(), 10);
+    const temp = parseFloat(parts[1].trim());
+
+    if (isNaN(gas) || isNaN(temp)) return;
+
+    updateTemperature(temp);
+    updateGas(gas);
+    evaluateKillSwitch(gas, temp);
+  }
+
+  // ── Temperature ─────────────────────────────────────────────────────────────
+  function updateTemperature(val) {
+    val = Math.abs(val);
+    const mainDisp = document.getElementById('temp-display');
+    if (mainDisp) mainDisp.textContent = val.toFixed(1);
+
+    const heroDisp = document.getElementById('hero-temp');
+    if (heroDisp) heroDisp.innerHTML = val.toFixed(1) + '<span class="text-sm font-normal ml-1">°C</span>';
+
+    // Arc gauge: 0–100°C
+    const pct = Math.min(val / 100, 1);
+    const arc = document.getElementById('temp-arc');
+    if (arc) arc.style.strokeDashoffset = (251.3 * (1 - pct)).toFixed(1);
+
+    // Bar
+    const bar = document.getElementById('temp-bar');
+    if (bar) bar.style.width = (pct * 100).toFixed(1) + '%';
+
+    const badge = document.getElementById('temp-badge');
+    if (badge) {
+      if (val >= TEMP_CRIT) {
+        if (bar) bar.className = 'h-full bg-red-500 rounded-full transition-all duration-500';
+        badge.className = 'text-[10px] px-2 py-1 neon-badge-red rounded font-black tracking-widest';
+        badge.textContent = 'CRITICAL';
+      } else if (val >= TEMP_WARN) {
+        if (bar) bar.className = 'h-full bg-yellow-500 rounded-full transition-all duration-500';
+        badge.className = 'text-[10px] px-2 py-1 neon-badge-amber rounded font-black tracking-widest';
+        badge.textContent = 'WARNING';
+      } else {
+        if (bar) bar.className = 'h-full bg-secondary rounded-full transition-all duration-500';
+        badge.className = 'text-[10px] px-2 py-1 neon-badge-green rounded font-black tracking-widest';
+        badge.textContent = 'STABLE';
+      }
+    }
+  }
+
+  // ── Gas ─────────────────────────────────────────────────────────────────────
+  function updateGas(val) {
+    const mainDisp = document.getElementById('gas-display');
+    if (mainDisp) mainDisp.innerHTML = val + '<span class="text-2xl font-normal ml-1 text-slate-400">ppm</span>';
+
+    const heroDisp = document.getElementById('hero-gas');
+    if (heroDisp) heroDisp.innerHTML = val + '<span class="text-sm font-normal ml-1">ppm</span>';
+
+    const pct = Math.min(val / 1023, 1);
+    const bar = document.getElementById('gas-bar');
+    if (bar) bar.style.width = (pct * 100).toFixed(1) + '%';
+
+    // Vertical bar fill
+    const fill = document.getElementById('gas-bar-fill');
+    if (fill) fill.style.height = (pct * 100).toFixed(1) + '%';
+
+    const badge = document.getElementById('gas-badge');
+    if (badge) {
+      if (val >= GAS_CRIT) {
+        if (fill) fill.className = 'w-full rounded-t-lg bg-red-500 transition-all duration-500';
+        if (bar) bar.className = 'h-full bg-red-500 rounded-full transition-all duration-500';
+        badge.className = 'text-[10px] px-2 py-1 neon-badge-red rounded font-black tracking-widest';
+        badge.textContent = 'DANGER';
+        if (Date.now() - lastAlertTime > 8000) {
+          showAlert('Gas Critical!', 'MQ-2 reading ' + val + ' ppm — electrolyte vapor detected. Kill switch may engage.');
+          lastAlertTime = Date.now();
+        }
+      } else if (val >= GAS_WARN) {
+        if (fill) fill.className = 'w-full rounded-t-lg bg-yellow-500 transition-all duration-500';
+        if (bar) bar.className = 'h-full bg-yellow-500 rounded-full transition-all duration-500';
+        badge.className = 'text-[10px] px-2 py-1 neon-badge-amber rounded font-black tracking-widest';
+        badge.textContent = 'WARNING';
+      } else {
+        if (fill) fill.className = 'w-full rounded-t-lg bg-secondary transition-all duration-500';
+        if (bar) bar.className = 'h-full bg-primary rounded-full transition-all duration-500';
+        badge.className = 'text-[10px] px-2 py-1 neon-badge-green rounded font-black tracking-widest';
+        badge.textContent = 'CLEAR';
+      }
+    }
+  }
+
+  // ── Kill Switch ─────────────────────────────────────────────────────────────
+  function evaluateKillSwitch(gas, temp) {
+    const danger = (gas >= GAS_CRIT || temp >= TEMP_CRIT);
+    if (danger === killActive) return;
+    killActive = danger;
+
+    const indicator  = document.getElementById('kill-indicator');
+    const label      = document.getElementById('kill-status-label');
+    const subText    = document.getElementById('kill-sub-text');
+    const panel      = document.getElementById('kill-switch-panel');
+    const heroDot    = document.getElementById('hero-kill-dot');
+    const heroText   = document.getElementById('hero-kill-text');
+    const navBadge   = document.getElementById('nav-status-badge');
+    const navText    = document.getElementById('nav-status-text');
+    const svg        = document.getElementById('battery-svg');
+    const batIcon    = document.getElementById('bat-icon');
+    const batCells   = ['bat-cell1','bat-cell2','bat-cell3','bat-cap','bat-border'].map(id => document.getElementById(id));
+
+    if (danger) {
+      // RED — DANGER
+      indicator.className  = 'w-28 h-28 rounded-full kill-switch-danger transition-all duration-500';
+      if (heroDot) heroDot.className = 'w-8 h-8 rounded-full kill-switch-danger flex-shrink-0';
+      label.className      = 'text-3xl font-headline font-bold text-red-400';
+      label.textContent    = 'DANGER';
+      subText.innerHTML    = 'IRLZ44N MOSFET: <span class="text-red-400 font-bold">ISOLATION ACTIVE</span>';
+      panel.className      = panel.className.replace('border-outline-variant/10','border-red-500/30') + ' bg-red-900/10';
+      if (heroText) {
+        heroText.className   = 'font-headline font-bold text-red-400 text-sm';
+        heroText.textContent = 'DANGER';
+      }
+      navBadge.className   = 'hidden md:flex items-center gap-2 px-4 py-2 rounded-full neon-badge-red text-xs font-black uppercase tracking-widest';
+      navText.textContent  = 'Danger';
+      svg.className        = 'w-40 battery-glow-danger transition-all duration-500';
+      batCells.forEach(el => { if(el) el.setAttribute('fill', '#ff3333'); });
+      batIcon.style.display = 'block';
+      addLog('🚨 KILL SWITCH TRIGGERED — POWER ISOLATED!', 'error');
+      showAlert('KILL SWITCH ACTIVE', 'Thermal/vapor threshold exceeded. IRLZ44N MOSFET has isolated the power supply.');
+    } else {
+      // GREEN — SAFE
+      indicator.className  = 'w-28 h-28 rounded-full kill-switch-safe transition-all duration-500';
+      if (heroDot) heroDot.className = 'w-8 h-8 rounded-full kill-switch-safe flex-shrink-0';
+      label.className      = 'text-3xl font-headline font-bold text-secondary';
+      label.textContent    = 'KILL SWITCH STATUS';
+      subText.innerHTML    = 'IRLZ44N MOSFET: <span class="text-secondary font-bold">CONDUCTING</span>';
+      panel.className      = 'md:col-span-4 lg:col-span-2 bg-surface-container-low p-8 rounded-3xl flex flex-col justify-between min-h-[320px] border border-outline-variant/10 transition-all duration-500';
+      if (heroText) {
+        heroText.className   = 'font-headline font-bold text-secondary text-sm';
+        heroText.textContent = 'KILL SWITCH STATUS';
+      }
+      navBadge.className   = 'hidden md:flex items-center gap-2 px-4 py-2 rounded-full neon-badge-green text-xs font-black uppercase tracking-widest';
+      navText.textContent  = 'Kill Switch Status';
+      svg.className        = 'w-40 battery-glow-safe transition-all duration-500';
+      batCells.forEach(el => { if(el) el.setAttribute('fill', '#4de082'); });
+      batIcon.style.display = 'none';
+      addLog('✅ System restored to safe state.', 'ok');
+      hideAlert(); // Auto-hide alert when receding to normal
+    }
+  }
+
+  // ── Connection Status ────────────────────────────────────────────────────────
+  function setConnStatus(connected) {
+    const dot  = document.getElementById('conn-status-dot');
+    const text = document.getElementById('conn-status-text');
+    const btn  = document.getElementById('connect-btn');
+    if (connected) {
+      dot.className  = 'w-3 h-3 rounded-full bg-secondary animate-pulse';
+      text.textContent = 'Connected · Live';
+      text.className   = 'text-xs uppercase tracking-widest text-secondary font-bold';
+      btn.textContent  = 'Disconnect';
+    } else {
+      dot.className  = 'w-3 h-3 rounded-full bg-slate-600';
+      text.textContent = 'Disconnected';
+      text.className   = 'text-xs uppercase tracking-widest text-slate-500 font-bold';
+      btn.textContent  = 'Connect Hardware';
+    }
+  }
+
+  // ── Terminal ─────────────────────────────────────────────────────────────────
+  let termCount = 0;
+  function terminalLog(raw) {
+    const log = document.getElementById('terminal-log');
+    const now = new Date();
+    const ts  = now.toTimeString().slice(0,8);
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    line.innerHTML = `<span class="text-slate-600">[${ts}]</span> <span class="text-green-400">${escapeHtml(raw)}</span>`;
+    log.appendChild(line);
+    termCount++;
+    if (termCount > 80) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  // ── System Log Panel ─────────────────────────────────────────────────────────
+  let logPanel = [];
+  function addLog(msg, type) {
+    const panel = document.getElementById('system-log-panel');
+    const now = new Date().toTimeString().slice(0,8);
+    const colorClass = type === 'error' ? 'border-l-2 border-red-500' : type === 'ok' ? 'border-l-2 border-secondary' : 'border-l-2 border-yellow-500';
+    const el = document.createElement('div');
+    el.className = `flex justify-between items-center bg-surface-container-low p-3 rounded-xl ${colorClass}`;
+    el.innerHTML = `<span class="text-xs text-on-surface">${escapeHtml(msg)}</span><span class="text-[10px] text-slate-500">${now}</span>`;
+    panel.prepend(el);
+    setTimeout(() => el.classList.remove('animate-pulse'), 1000);
+    // Keep max 5
+    while (panel.children.length > 5) panel.removeChild(panel.lastChild);
+  }
+
+  // ── Alert Handling ───────────────────────────────────────────────────────────
+  function showAlert(title, body) {
+    document.getElementById('alert-title').textContent = title;
+    document.getElementById('alert-body').textContent  = body;
+    const container = document.getElementById('side-alert-container');
+    const alert = document.getElementById('side-alert');
+    
+    container.classList.remove('hidden');
+    alert.classList.add('animate-in', 'fade-in', 'zoom-in', 'duration-300');
+  }
+
+  function hideAlert() {
+    const container = document.getElementById('side-alert-container');
+    if (container) container.classList.add('hidden');
+  }
+
+  // ── Utility ──────────────────────────────────────────────────────────────────
+  function escapeHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Demo / Simulation (runs if no hardware connected, shows how it looks) ────
+  // Uncomment the lines below to run a visual simulation:
+  /*
+  let simStep = 0;
+  setInterval(() => {
+    simStep++;
+    const gas  = Math.floor(200 + Math.sin(simStep * 0.15) * 250 + simStep * 2.5) % 900;
+    const temp = +(20 + Math.sin(simStep * 0.08) * 25 + simStep * 0.3).toFixed(1);
+    processData(`${gas},${temp.toFixed(1)}`);
+  }, 500);
+  */
+  // ── Tab Switching Logic ─────────────────────────────────────────────────────
+  let currentTab = 'dashboard';
+
+  function switchTab(tab, e) {
+    if (e) e.preventDefault();
+
+    const sections = {
+      'dashboard': document.getElementById('hero-section'),
+      'live': document.getElementById('live-readings-section'),
+      'about': document.getElementById('project')
+    };
+
+    const links = {
+      'dashboard': document.getElementById('nav-dashboard'),
+      'about': document.getElementById('nav-about')
+    };
+
+    // Hide all sections and reset links
+    Object.keys(sections).forEach(key => {
+      if (sections[key]) sections[key].style.display = 'none';
+    });
+    Object.keys(links).forEach(key => {
+      if (links[key]) {
+        links[key].classList.remove('nav-link-active');
+        links[key].classList.add('nav-link-inactive');
+      }
+    });
+
+    // Show target section
+    if (sections[tab]) {
+      sections[tab].style.display = (tab === 'dashboard' ? 'flex' : 'block');
+      if (tab === 'about') sections[tab].classList.add('about-open');
+    }
+
+    // Activate nav link (only dashboard and about have nav links)
+    if (links[tab]) {
+      links[tab].classList.add('nav-link-active');
+      links[tab].classList.remove('nav-link-inactive');
+    }
+
+    // Handle Footer
+    const footer = document.querySelector('footer');
+    if (footer) footer.style.display = (tab === 'dashboard' ? 'none' : 'block');
+
+    currentTab = tab;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // ── Connect Modal ────────────────────────────────────────────────────────────
+  function openConnectModal() {
+    document.getElementById('connect-modal-overlay').classList.add('modal-open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeConnectModal() {
+    document.getElementById('connect-modal-overlay').classList.remove('modal-open');
+    document.body.style.overflow = '';
+  }
+
+  function handleModalOverlayClick(e) {
+    if (e.target === document.getElementById('connect-modal-overlay')) closeConnectModal();
+  }
+
+  // User chose to connect hardware — full gated flow
+  let previousTab = 'dashboard';
+
+  function showScreen(id) {
+    ['error-screen','connecting-screen','connected-screen'].forEach(s => {
+      const el = document.getElementById(s);
+      if (el) el.style.display = 'none';
+    });
+    if (id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'flex';
+    }
+    document.body.style.overflow = id ? 'hidden' : '';
+  }
+
+  async function modalConnectHardware() {
+    closeConnectModal();
+    previousTab = currentTab;
+    showLiveFab();
+    try {
+      serialPort = await navigator.serial.requestPort();
+      hideLiveFab();
+      showScreen('connecting-screen');
+      await serialPort.open({ baudRate: 9600 });
+      isConnected = true;
+      setConnStatus(true);
+      addLog('\u2705 Connected to Arduino UNO at 9600 baud.', 'ok');
+      showScreen('connected-screen');
+      setTimeout(() => { showScreen(null); switchTab('live'); readLoop(); }, 2200);
+    } catch (err) {
+      hideLiveFab();
+      showScreen('error-screen');
+      addLog('\u274c Connection failed: ' + err.message, 'error');
+    }
+  }
+
+  function goBackFromError() {
+    showScreen(null);
+    switchTab(previousTab || 'dashboard');
+  }
+
+  async function retryConnection() {
+    showScreen('connecting-screen');
+    
+    // Attempt connection during the analysis phase
+    let success = false;
+    try {
+      // Small buffer to allow UI to show 'Analysing'
+      await new Promise(r => setTimeout(r, 800)); 
+      
+      serialPort = await navigator.serial.requestPort();
+      await serialPort.open({ baudRate: 9600 });
+      isConnected = true;
+      setConnStatus(true);
+      addLog('\u2705 Re-connected to Arduino UNO.', 'ok');
+      success = true;
+    } catch (err) {
+      console.warn('Retry connection failed during analysis:', err);
+      success = false;
+    }
+
+    // Continue the "Analysing" state until the 5-second mark for UX
+    await new Promise(resolve => setTimeout(resolve, 4200));
+    
+    if (success && isConnected) {
+      showScreen('connected-screen');
+      setTimeout(() => { showScreen(null); switchTab('live'); readLoop(); }, 2200);
+    } else {
+      showScreen('error-screen');
+      addLog('\u274c Retry failed: System still not connected.', 'error');
+    }
+  }
+
+  // User chose to go to live dashboard
+  function modalGoLive() {
+    closeConnectModal();
+    if (isConnected) {
+      switchTab('live');
+    } else {
+      previousTab = currentTab;
+      showScreen('error-screen');
+      addLog('\u274c Access Denied: Please connect hardware to view live telemetry.', 'error');
+    }
+  }
+
+  // Keyboard close
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeConnectModal();
+  });
+
+  // ── Background Animation (Connecting Lines) ──────────────────────────────────
+  (function initBgAnimation() {
+    const canvas = document.getElementById('bg-animation-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+    const particleCount = 62;
+    const connectionDistance = 150;
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    class Particle {
+      constructor() {
+        this.reset();
+      }
+      reset() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.vx = (Math.random() - 0.5) * 0.5;
+        this.vy = (Math.random() - 0.5) * 0.5;
+        this.radius = Math.random() * 1.5 + 1;
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
+        if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(142, 213, 255, 0.4)';
+        ctx.fill();
+      }
+    }
+
+    function createParticles() {
+      particles = [];
+      for (let i = 0; i < particleCount; i++) {
+        particles.push(new Particle());
+      }
+    }
+
+    function drawLines() {
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance < connectionDistance) {
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            const opacity = 1 - (distance / connectionDistance);
+            ctx.strokeStyle = `rgba(142, 213, 255, ${opacity * 0.2})`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    function animate() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => {
+        p.update();
+        p.draw();
+      });
+      drawLines();
+      requestAnimationFrame(animate);
+    }
+
+    window.addEventListener('resize', () => {
+      resize();
+      createParticles();
+    });
+
+    resize();
+    createParticles();
+    animate();
+  })();
+</script>
+
+</body></html>
