@@ -1,4 +1,4 @@
-# thermospark26
+
 # 🔥 ThermoSpark 2026 — Battery Thermal Runaway Identifier
 
 ## 🚀 Overview
